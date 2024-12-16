@@ -24,22 +24,18 @@ if 'last_modified_gum' not in st.session_state:
     st.session_state.last_modified_gum = None
 
 # ====== HELPER FUNCTIONS ======
-# Convert UTC time to Hong Kong time
-def get_hk_time(utc_time):
+def format_hk_time(timestamp):
+    """Convert timestamp to Hong Kong time and format it"""
     utc = pytz.UTC
-    hk_tz = pytz.timezone('Asia/Hong_Kong')
+    hk_timezone = pytz.timezone('Asia/Hong_Kong')
     
-    # If the time is naive (no timezone info), assume it's UTC
-    if utc_time.tzinfo is None:
-        utc_time = utc.localize(utc_time)
+    # If timestamp is naive (no timezone info), first convert to UTC
+    if timestamp.tzinfo is None:
+        timestamp = utc.localize(timestamp)
     
     # Convert to Hong Kong time
-    hk_time = utc_time.astimezone(hk_tz)
-    return hk_time
-
-# When displaying the time:
-hk_time = get_hk_time(datetime_object)  # Replace datetime_object with your actual datetime
-formatted_time = hk_time.strftime('%Y-%m-%d %H:%M')
+    hk_time = timestamp.astimezone(hk_timezone)
+    return hk_time.strftime('%Y-%m-%d %H:%M')
 
 def load_contact_file():
     """Load contact file and get current time as upload time"""
