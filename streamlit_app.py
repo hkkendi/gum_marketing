@@ -4,11 +4,14 @@ import pandas as pd
 import io
 from datetime import datetime
 import os
+import pytz
 
 # ====== CONSTANTS ======
 # Required columns
 TODO_REQUIRED_COLUMNS = ['Activity Company / ID', 'Assign To (Handler 1)', 'Assign To (Handler 2)']
 GUM_CONTACT_COLUMNS = ['Email*', 'Contact Company/ID', 'Contact Company', 'Contact Company/GUM Reference ID']
+
+
 
 # ====== SESSION STATE INITIALIZATION ======
 if 'contact_data' not in st.session_state:
@@ -21,12 +24,21 @@ if 'last_modified_gum' not in st.session_state:
     st.session_state.last_modified_gum = None
 
 # ====== HELPER FUNCTIONS ======
+def format_hk_time(timestamp):
+    """Convert timestamp to Hong Kong time and format it"""
+    hk_timezone = pytz.timezone('Asia/Hong_Kong')
+    utc_time = pytz.utc.localize(timestamp)
+    hk_time = utc_time.astimezone(hk_timezone)
+    return hk_time.strftime('%Y-%m-%d %H:%M')
+
 def load_contact_file():
     """Load contact file from the app directory"""
     try:
         contact_path = os.path.join(os.getcwd(), "Contact (res.partner).xlsx")
         if os.path.exists(contact_path):
-            last_modified = datetime.fromtimestamp(os.path.getmtime(contact_path))
+            # Get the actual file modification time
+            mtime = os.path.getmtime(contact_path)
+            last_modified = datetime.fromtimestamp(mtime)
             data = pd.read_excel(contact_path)
             return data, last_modified
         return None, None
@@ -39,7 +51,9 @@ def load_gum_contact_file():
     try:
         gum_path = os.path.join(os.getcwd(), "GUM Resource Contact (gm.res.contact).xlsx")
         if os.path.exists(gum_path):
-            last_modified = datetime.fromtimestamp(os.path.getmtime(gum_path))
+            # Get the actual file modification time
+            mtime = os.path.getmtime(gum_path)
+            last_modified = datetime.fromtimestamp(mtime)
             data = pd.read_excel(gum_path)
             return data, last_modified
         return None, None
@@ -84,9 +98,10 @@ st.title("Excel Data Processor")
 st.subheader("Contact File Status")
 contact_data, last_modified = load_contact_file()
 
+# For Contact file:
 if contact_data is not None:
     st.success("✅ Contact file loaded successfully")
-    st.info(f"Last modified: {last_modified}")
+    st.info(f"Last modified: {format_hk_time(last_modified)}")
     st.session_state.contact_data = contact_data
     st.session_state.last_modified_contact = last_modified
 else:
@@ -172,10 +187,10 @@ st.title("GUM Resource Contact Lookup")
 # Load automatic GUM contact data
 gum_data, gum_modified = load_gum_contact_file()
 
-# Display automatic file status
+# For GUM Resource Contact file:
 if gum_data is not None:
     st.success("✅ GUM Resource Contact file loaded successfully")
-    st.info(f"Last modified: {gum_modified}")
+    st.info(f"Last modified: {format_hk_time(last_modified)}")
     st.session_state.gum_contact_data = gum_data
 else:
     st.warning("⚠️ GUM Resource Contact file not found")
