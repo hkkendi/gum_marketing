@@ -1,68 +1,64 @@
-import subprocess
-subprocess.run(['pip', 'install', 'openpyxl'])
-
 import streamlit as st
-import pandas as pd
-import io
+import socket
+import ipaddress
+from streamlit.web.server.websocket_headers import _get_websocket_headers
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
-def process_data(todo_df, contact_df):
-    # 2. Process To Do.xlsx
-    # Keep only required columns
-    todo_df = todo_df[['Activity Company / ID', 'Assign To (Handler 1)', 'Assign To (Handler 2)']]
-    # Remove duplicates based on 'Activity Company / ID', keep first occurrence
-    todo_df = todo_df.drop_duplicates(subset=['Activity Company / ID'], keep='first')
-    
-    # 3. Process Contact (res.partner).xlsx
-    contact_df = contact_df[['Name', 'ID', 'GUM Reference ID', 'Lead Sales Rep 1', 'Lead Sales Rep 2']]
-    
-    # 4. Merge dataframes
-    # Merge on 'Activity Company / ID' matching with 'ID' from contacts
-    merged_df = todo_df.merge(contact_df, 
-                            left_on='Activity Company / ID', 
-                            right_on='ID', 
-                            how='left')
-    
-    # 5. Create 'Check Handler Match' column
-    def check_handlers_match(row):
-        handler1_match = str(row['Assign To (Handler 1)']) == str(row['Lead Sales Rep 1'])
-        handler2_match = str(row['Assign To (Handler 2)']) == str(row['Lead Sales Rep 2'])
-        return 'YES' if handler1_match and handler2_match else 'NO'
-    
-    merged_df['Check Handler Match'] = merged_df.apply(check_handlers_match, axis=1)
-    
-    return merged_df
-
-st.title("Excel Data Processor")
-
-# File uploaders
-todo_file = st.file_uploader("Upload To Do.xlsx", type="xlsx")
-contact_file = st.file_uploader("Upload Contact (res.partner).xlsx", type="xlsx")
-
-if todo_file is not None and contact_file is not None:
+def get_client_ip():
+    """Get client's IP address."""
     try:
-        # Read Excel files
-        todo_df = pd.read_excel(todo_file)
-        contact_df = pd.read_excel(contact_file)
+        ctx = get_script_run_ctx()
+        if ctx is None:
+            return None
         
-        # Process the data
-        result_df = process_data(todo_df, contact_df)
+        # Get headers from the context
+        headers = _get_websocket_headers()
         
-        # Show preview of the result
-        st.write("Preview of processed data:")
-        st.dataframe(result_df.head())
+        # Try to get IP from X-Forwarded-For header first
+        ip = headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        if not ip:
+            # Fallback to other headers
+            ip = headers.get("X-Real-IP", "")
+        if not ip:
+            # Final fallback
+            ip = headers.get("Remote-IP", "")
+            
+        return ip
+    except Exception:
+        return None
+
+def is_allowed_ip(ip):
+    """Check if IP is in allowed range (192.168.xxx)."""
+    try:
+        if ip is None:
+            return False
         
-        # Create download button
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            result_df.to_excel(writer, index=False, sheet_name='Processed Data')
+        ip_obj = ipaddress.ip_address(ip)
         
-        st.download_button(
-            label="Download processed file",
-            data=buffer.getvalue(),
-            file_name="processed_result.xlsx",
-            mime="application/vnd.ms-excel"
-        )
-        
-    except Exception as e:
-        st.error(f"An error occurred: {str(e)}")
-        st.error("Please make sure your Excel files have the required columns")
+        # Check if IP starts with 192.168
+        return str(ip_obj).startswith("192.168.")
+    except ValueError:
+        return False
+
+# IP checking middleware
+def check_ip_access():
+    client_ip = get_client_ip()
+    
+    if not is_allowed_ip(client_ip):
+        st.error("Access Denied: Your IP address is not authorized to access this application.")
+        st.write(f"Your IP: {client_ip}")
+        st.stop()
+
+# Main app code
+def main():
+    # Check IP access first
+    check_ip_access()
+    
+    # Your original app code goes here
+    st.title("IP-Restricted Streamlit App")
+    st.write("Welcome! You're accessing from an authorized IP address.")
+    
+    # Add your app's functionality here
+    
+if __name__ == "__main__":
+    main()
