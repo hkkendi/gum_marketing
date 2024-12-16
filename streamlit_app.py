@@ -169,56 +169,75 @@ st.markdown("---")
 # Section 2: GUM Resource Contact Lookup
 st.title("GUM Resource Contact Lookup")
 
-# Load GUM contact data
+# Load automatic GUM contact data
 gum_data, gum_modified = load_gum_contact_file()
 
+# Display automatic file status
 if gum_data is not None:
     st.success("✅ GUM Resource Contact file loaded successfully")
     st.info(f"Last modified: {gum_modified}")
     st.session_state.gum_contact_data = gum_data
-    
-    # Email lookup
-    email = st.text_input("Enter Email Address for Lookup")
-    
-    if st.button("Look Up Contact Details"):
-        if email:
-            # Find matching records
-            matching_records = gum_data[gum_data['Email*'] == email]
-            
-            if not matching_records.empty:
-                st.success(f"Found {len(matching_records)} contact(s)!")
-                
-                # Remove duplicates based on Contact Company/ID while keeping other unique combinations
-                unique_records = matching_records.drop_duplicates(subset=['Contact Company/ID'])
-                
-                # Display each unique record
-                for idx, record in unique_records.iterrows():
-                    st.markdown(f"**Result {idx + 1}:**")
-                    contact_info = pd.DataFrame({
-                        'Field': ['Contact Company/ID', 'Contact Company', 'Contact Company/GUM Reference ID'],
-                        'Value': [
-                            record['Contact Company/ID'],
-                            record['Contact Company'],
-                            record['Contact Company/GUM Reference ID']
-                        ]
-                    })
-                    st.table(contact_info)
-                    # Add a small space between multiple results
-                    st.markdown("")
-                
-                # Show total number of records found
-                if len(unique_records) > 1:
-                    st.info(f"⚠️ Note: Found {len(unique_records)} unique Contact Company/IDs for this email.")
-            else:
-                st.warning("No contact found with this email address")
-        else:
-            st.warning("Please enter an email address")
 else:
     st.warning("⚠️ GUM Resource Contact file not found")
-    
-# Refresh button for GUM contact file
+
+# Refresh button for automatic GUM contact file
 if st.button("🔄 Refresh GUM Contact File"):
     gum_data, gum_modified = load_gum_contact_file()
     if gum_data is not None:
         st.session_state.gum_contact_data = gum_data
         st.rerun()
+
+# Manual override section for GUM Resource Contact file
+st.subheader("Override GUM Resource Contact File (Optional)")
+manual_gum_file = st.file_uploader("Upload GUM Resource Contact (gm.res.contact).xlsx", type=["xlsx", "xls"])
+
+# Use manual file if uploaded, otherwise use automatic file
+if manual_gum_file is not None:
+    try:
+        gum_data = pd.read_excel(manual_gum_file)
+        st.success(f"Successfully loaded manual file: {manual_gum_file.name}")
+    except Exception as e:
+        st.error(f"Error reading manual file: {str(e)}")
+        gum_data = st.session_state.gum_contact_data
+else:
+    gum_data = st.session_state.gum_contact_data
+
+# Email lookup section
+st.subheader("Email Lookup")
+email = st.text_input("Enter Email Address for Lookup")
+
+if st.button("Look Up Contact Details"):
+    if gum_data is not None and email:
+        # Find matching records
+        matching_records = gum_data[gum_data['Email*'] == email]
+        
+        if not matching_records.empty:
+            total_matches = len(matching_records)
+            st.success(f"Found {total_matches} contact(s)!")
+            
+            # Display all matching records
+            for idx, record in matching_records.iterrows():
+                st.markdown(f"**Result {idx + 1} of {total_matches}:**")
+                contact_info = pd.DataFrame({
+                    'Field': ['Contact Company/ID', 'Contact Company', 'Contact Company/GUM Reference ID'],
+                    'Value': [
+                        record['Contact Company/ID'],
+                        record['Contact Company'],
+                        record['Contact Company/GUM Reference ID']
+                    ]
+                })
+                st.table(contact_info)
+                # Add a small space between multiple results
+                st.markdown("")
+            
+            # If there are multiple results, show a summary of unique Company/IDs
+            if total_matches > 1:
+                unique_companies = matching_records['Contact Company/ID'].nunique()
+                if unique_companies < total_matches:
+                    st.info(f"📊 Summary: These {total_matches} results contain {unique_companies} unique Contact Company/IDs.")
+        else:
+            st.warning("No contact found with this email address")
+    elif gum_data is None:
+        st.error("Please ensure GUM Resource Contact file is loaded (either automatic or manual)")
+    else:
+        st.warning("Please enter an email address")
