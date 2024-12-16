@@ -1,36 +1,51 @@
+# ====== IMPORTS ======
 import streamlit as st
 import pandas as pd
 import io
 from datetime import datetime
 import os
 
+# ====== CONSTANTS ======
 # Required columns
 TODO_REQUIRED_COLUMNS = ['Activity Company / ID', 'Assign To (Handler 1)', 'Assign To (Handler 2)']
+GUM_CONTACT_COLUMNS = ['Email*', 'Contact Company/ID', 'Contact Company', 'Contact Company/GUM Reference ID']
 
-# Initialize session state
+# ====== SESSION STATE INITIALIZATION ======
 if 'contact_data' not in st.session_state:
     st.session_state.contact_data = None
 if 'last_modified_contact' not in st.session_state:
     st.session_state.last_modified_contact = None
+if 'gum_contact_data' not in st.session_state:
+    st.session_state.gum_contact_data = None
+if 'last_modified_gum' not in st.session_state:
+    st.session_state.last_modified_gum = None
 
+# ====== HELPER FUNCTIONS ======
 def load_contact_file():
     """Load contact file from the app directory"""
     try:
-        # Try to load from the current directory
         contact_path = os.path.join(os.getcwd(), "Contact (res.partner).xlsx")
-        
-        # Debug information
-        st.write("Looking for contact file at:", contact_path)
-        st.write("Directory contents:", os.listdir())
-        
         if os.path.exists(contact_path):
             last_modified = datetime.fromtimestamp(os.path.getmtime(contact_path))
             data = pd.read_excel(contact_path)
-            return data, last_modified, contact_path
-        return None, None, contact_path
+            return data, last_modified
+        return None, None
     except Exception as e:
         st.error(f"Error loading contact file: {str(e)}")
-        return None, None, None
+        return None, None
+
+def load_gum_contact_file():
+    """Load GUM contact file from the app directory"""
+    try:
+        gum_path = os.path.join(os.getcwd(), "GUM Resource Contact (gm.res.contact).xlsx")
+        if os.path.exists(gum_path):
+            last_modified = datetime.fromtimestamp(os.path.getmtime(gum_path))
+            data = pd.read_excel(gum_path)
+            return data, last_modified
+        return None, None
+    except Exception as e:
+        st.error(f"Error loading GUM contact file: {str(e)}")
+        return None, None
 
 def validate_todo_file(df):
     """Validate that the uploaded file has the required columns"""
@@ -61,32 +76,32 @@ def process_data(todo_df, contact_df):
     
     return merged_df
 
+# ====== MAIN UI ======
+# Title
 st.title("Excel Data Processor")
 
-# Load and display contact file status
+# Section 1: Contact File Status and To Do Processing
 st.subheader("Contact File Status")
-contact_data, last_modified, file_path = load_contact_file()
+contact_data, last_modified = load_contact_file()
 
 if contact_data is not None:
     st.success("✅ Contact file loaded successfully")
     st.info(f"Last modified: {last_modified}")
-    st.info(f"File path: {file_path}")
     st.session_state.contact_data = contact_data
     st.session_state.last_modified_contact = last_modified
 else:
-    st.warning("⚠️ Contact file not found in the deployment directory")
-    st.info("Current directory path: " + os.getcwd())
+    st.warning("⚠️ Contact file not found")
 
 # Manual refresh button for contact file
 if st.button("🔄 Refresh Contact File"):
-    contact_data, last_modified, file_path = load_contact_file()
+    contact_data, last_modified = load_contact_file()
     if contact_data is not None:
         st.session_state.contact_data = contact_data
         st.session_state.last_modified_contact = last_modified
         st.rerun()
 
-# Manual file upload section with expanded help text
-st.subheader("Upload Activity File")
+# Manual file upload section
+st.subheader("Upload To Do Template File")
 st.info("Upload any Excel file that contains these required columns:\n" + 
         ", ".join(TODO_REQUIRED_COLUMNS))
 todo_file = st.file_uploader("Choose Excel file", type=["xlsx", "xls"])
@@ -147,3 +162,51 @@ else:
         st.info("Please upload an Excel file with the required columns")
     elif contact_df is None:
         st.info("Waiting for Contact file (either automatic or manual upload)")
+
+# Section divider
+st.markdown("---")
+
+# Section 2: GUM Resource Contact Lookup
+st.title("GUM Resource Contact Lookup")
+
+# Load GUM contact data
+gum_data, gum_modified = load_gum_contact_file()
+
+if gum_data is not None:
+    st.success("✅ GUM Resource Contact file loaded successfully")
+    st.info(f"Last modified: {gum_modified}")
+    st.session_state.gum_contact_data = gum_data
+    
+    # Email lookup
+    email = st.text_input("Enter Email Address for Lookup")
+    
+    if st.button("Look Up Contact Details"):
+        if email:
+            # Find matching record
+            matching_record = gum_data[gum_data['Email*'] == email]
+            
+            if not matching_record.empty:
+                st.success("Contact Found!")
+                # Display the contact information
+                contact_info = pd.DataFrame({
+                    'Field': ['Contact Company/ID', 'Contact Company', 'Contact Company/GUM Reference ID'],
+                    'Value': [
+                        matching_record['Contact Company/ID'].iloc[0],
+                        matching_record['Contact Company'].iloc[0],
+                        matching_record['Contact Company/GUM Reference ID'].iloc[0]
+                    ]
+                })
+                st.table(contact_info)
+            else:
+                st.warning("No contact found with this email address")
+        else:
+            st.warning("Please enter an email address")
+else:
+    st.warning("⚠️ GUM Resource Contact file not found")
+    
+# Refresh button for GUM contact file
+if st.button("🔄 Refresh GUM Contact File"):
+    gum_data, gum_modified = load_gum_contact_file()
+    if gum_data is not None:
+        st.session_state.gum_contact_data = gum_data
+        st.rerun()
