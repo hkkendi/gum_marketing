@@ -26,19 +26,34 @@ if 'last_modified_gum' not in st.session_state:
 # ====== HELPER FUNCTIONS ======
 def format_hk_time(timestamp):
     """Convert timestamp to Hong Kong time and format it"""
+    if isinstance(timestamp, str):
+        # If timestamp is already a string, parse it first
+        timestamp = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
     hk_timezone = pytz.timezone('Asia/Hong_Kong')
-    utc_time = pytz.utc.localize(timestamp)
-    hk_time = utc_time.astimezone(hk_timezone)
-    return hk_time.strftime('%Y-%m-%d %H:%M')
+    # If timestamp is naive (no timezone info), assume it's HK time
+    if timestamp.tzinfo is None:
+        timestamp = hk_timezone.localize(timestamp)
+    return timestamp.strftime('%Y-%m-%d %H:%M')
+
+def get_file_info(file_path):
+    """Get file modification time properly from Windows"""
+    try:
+        # Get file stats
+        stats = os.stat(file_path)
+        # Get the modification time as a datetime object
+        mod_time = datetime.fromtimestamp(stats.st_mtime)
+        return mod_time
+    except Exception as e:
+        st.error(f"Error getting file info: {str(e)}")
+        return None
 
 def load_contact_file():
-    """Load contact file from the app directory"""
+    """Load contact file and preserve its original modification time"""
     try:
         contact_path = os.path.join(os.getcwd(), "Contact (res.partner).xlsx")
         if os.path.exists(contact_path):
-            # Get the actual file modification time
-            mtime = os.path.getmtime(contact_path)
-            last_modified = datetime.fromtimestamp(mtime)
+            # Get the actual Windows file modification time
+            last_modified = get_file_info(contact_path)
             data = pd.read_excel(contact_path)
             return data, last_modified
         return None, None
@@ -47,19 +62,22 @@ def load_contact_file():
         return None, None
 
 def load_gum_contact_file():
-    """Load GUM contact file from the app directory"""
+    """Load GUM contact file and preserve its original modification time"""
     try:
         gum_path = os.path.join(os.getcwd(), "GUM Resource Contact (gm.res.contact).xlsx")
         if os.path.exists(gum_path):
-            # Get the actual file modification time
-            mtime = os.path.getmtime(gum_path)
-            last_modified = datetime.fromtimestamp(mtime)
+            # Get the actual Windows file modification time
+            last_modified = get_file_info(gum_path)
             data = pd.read_excel(gum_path)
             return data, last_modified
         return None, None
     except Exception as e:
         st.error(f"Error loading GUM contact file: {str(e)}")
         return None, None
+
+# For debugging purposes, add this at the start of your main UI
+st.write("Debug - Current working directory:", os.getcwd())
+st.write("Debug - Files in directory:", os.listdir())
 
 def validate_todo_file(df):
     """Validate that the uploaded file has the required columns"""
@@ -101,7 +119,8 @@ contact_data, last_modified = load_contact_file()
 # For Contact file:
 if contact_data is not None:
     st.success("✅ Contact file loaded successfully")
-    st.info(f"Last modified: {format_hk_time(last_modified)}")
+    if last_modified:
+        st.info(f"Last modified: {format_hk_time(last_modified)}")
     st.session_state.contact_data = contact_data
     st.session_state.last_modified_contact = last_modified
 else:
@@ -190,7 +209,8 @@ gum_data, gum_modified = load_gum_contact_file()
 # For GUM Resource Contact file:
 if gum_data is not None:
     st.success("✅ GUM Resource Contact file loaded successfully")
-    st.info(f"Last modified: {format_hk_time(last_modified)}")
+    if gum_modified:
+        st.info(f"Last modified: {format_hk_time(gum_modified)}")
     st.session_state.gum_contact_data = gum_data
 else:
     st.warning("⚠️ GUM Resource Contact file not found")
@@ -228,11 +248,20 @@ if st.button("Look Up Contact Details"):
         
         if not matching_records.empty:
             total_matches = len(matching_records)
+            # Get unique records based on Contact Company/ID
+            unique_records = matching_records.drop_duplicates(subset=['Contact Company/ID'])
+            unique_count = len(unique_records)
+            
+            # Show the total matches found
             st.success(f"Found {total_matches} contact(s)!")
             
-            # Display all matching records
-            for idx, record in matching_records.iterrows():
-                st.markdown(f"**Result {idx + 1} of {total_matches}:**")
+            # If there are duplicate records, show the summary first
+            if total_matches > unique_count:
+                st.info(f"📊 Summary: These {total_matches} results contain {unique_count} unique Contact Company/IDs.")
+                st.markdown("*Showing unique records only:*")
+            
+            # Display only unique records
+            for idx, record in unique_records.iterrows():
                 contact_info = pd.DataFrame({
                     'Field': ['Contact Company/ID', 'Contact Company', 'Contact Company/GUM Reference ID'],
                     'Value': [
@@ -242,14 +271,9 @@ if st.button("Look Up Contact Details"):
                     ]
                 })
                 st.table(contact_info)
-                # Add a small space between multiple results
-                st.markdown("")
-            
-            # If there are multiple results, show a summary of unique Company/IDs
-            if total_matches > 1:
-                unique_companies = matching_records['Contact Company/ID'].nunique()
-                if unique_companies < total_matches:
-                    st.info(f"📊 Summary: These {total_matches} results contain {unique_companies} unique Contact Company/IDs.")
+                # Add a small space between results if there are multiple
+                if unique_count > 1:
+                    st.markdown("")
         else:
             st.warning("No contact found with this email address")
     elif gum_data is None:
