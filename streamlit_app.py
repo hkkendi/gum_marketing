@@ -4,18 +4,16 @@ import io
 import os
 from datetime import datetime, time
 
-# File paths
+# File path for automatic loading
 FILE_PATH = r"C:\Users\KendiNg\Documents\Apps_running_files"
-TODO_FILE = "To Do.xlsx"
 CONTACT_FILE = "Contact (res.partner).xlsx"
 
+# Required columns
+TODO_REQUIRED_COLUMNS = ['Activity Company / ID', 'Assign To (Handler 1)', 'Assign To (Handler 2)']
+
 # Initialize session state
-if 'todo_data' not in st.session_state:
-    st.session_state.todo_data = None
 if 'contact_data' not in st.session_state:
     st.session_state.contact_data = None
-if 'last_modified_todo' not in st.session_state:
-    st.session_state.last_modified_todo = None
 if 'last_modified_contact' not in st.session_state:
     st.session_state.last_modified_contact = None
 if 'last_check_time' not in st.session_state:
@@ -29,7 +27,6 @@ def should_check_files():
         time(12, 30)  # 12:30 PM
     ]
     
-    # If it's exactly one of our check times, return True
     if any(current_time.hour == t.hour and current_time.minute == t.minute for t in check_times):
         if (st.session_state.last_check_time is None or 
             st.session_state.last_check_time.hour != current_time.hour or 
@@ -38,27 +35,25 @@ def should_check_files():
             return True
     return False
 
-def load_file(file_path):
-    """Load file and get its last modified time"""
-    if os.path.exists(file_path):
-        last_modified = datetime.fromtimestamp(os.path.getmtime(file_path))
-        data = pd.read_excel(file_path)
+def validate_todo_file(df):
+    """Validate that the uploaded file has the required columns"""
+    missing_columns = [col for col in TODO_REQUIRED_COLUMNS if col not in df.columns]
+    if missing_columns:
+        return False, f"Missing required columns: {', '.join(missing_columns)}"
+    return True, "File is valid"
+
+def load_contact_file():
+    """Load contact file and get its last modified time"""
+    contact_path = os.path.join(FILE_PATH, CONTACT_FILE)
+    if os.path.exists(contact_path):
+        last_modified = datetime.fromtimestamp(os.path.getmtime(contact_path))
+        data = pd.read_excel(contact_path)
         return data, last_modified
     return None, None
 
-def check_automatic_files():
-    """Check and load files"""
-    todo_path = os.path.join(FILE_PATH, TODO_FILE)
-    contact_path = os.path.join(FILE_PATH, CONTACT_FILE)
-    
-    # Load files
-    todo_data, todo_modified = load_file(todo_path)
-    contact_data, contact_modified = load_file(contact_path)
-    
-    # Update session state
-    if todo_data is not None:
-        st.session_state.todo_data = todo_data
-        st.session_state.last_modified_todo = todo_modified
+def check_automatic_contact():
+    """Check and load contact file"""
+    contact_data, contact_modified = load_contact_file()
     
     if contact_data is not None:
         st.session_state.contact_data = contact_data
@@ -66,7 +61,7 @@ def check_automatic_files():
 
 def process_data(todo_df, contact_df):
     # Keep only required columns
-    todo_df = todo_df[['Activity Company / ID', 'Assign To (Handler 1)', 'Assign To (Handler 2)']]
+    todo_df = todo_df[TODO_REQUIRED_COLUMNS]
     todo_df = todo_df.drop_duplicates(subset=['Activity Company / ID'], keep='first')
     
     contact_df = contact_df[['Name', 'ID', 'GUM Reference ID', 'Lead Sales Rep 1', 'Lead Sales Rep 2']]
@@ -88,57 +83,58 @@ def process_data(todo_df, contact_df):
 def main():
     st.title("Excel Data Processor")
     
-    # Check for automatic file updates at specified times
+    # Check for automatic contact file updates at specified times
     if should_check_files():
-        check_automatic_files()
+        check_automatic_contact()
         st.rerun()
     
-    # Display automatic file loading status
-    st.subheader("Automatic File Loading Status")
-    col1, col2 = st.columns(2)
+    # Display automatic contact file loading status
+    st.subheader("Contact File Status")
+    if st.session_state.last_modified_contact:
+        st.write(f"Contact file last modified: {st.session_state.last_modified_contact}")
+        st.write(f"Source: {os.path.join(FILE_PATH, CONTACT_FILE)}")
+    else:
+        st.warning("Contact file not found in automatic directory")
     
-    with col1:
-        st.write("To Do.xlsx")
-        if st.session_state.last_modified_todo:
-            st.write(f"Last modified: {st.session_state.last_modified_todo}")
-        else:
-            st.write("File not found in automatic directory")
-            
-    with col2:
-        st.write("Contact (res.partner).xlsx")
-        if st.session_state.last_modified_contact:
-            st.write(f"Last modified: {st.session_state.last_modified_contact}")
-        else:
-            st.write("File not found in automatic directory")
-    
-    # Manual refresh button for automatic loading
-    if st.button("Refresh Automatic Files"):
-        check_automatic_files()
+    # Manual refresh button for automatic contact file
+    if st.button("Refresh Contact File"):
+        check_automatic_contact()
         st.rerun()
     
-    # Manual file upload section
-    st.subheader("Manual File Upload")
-    st.write("You can also upload files manually:")
+    # Manual file upload section with expanded help text
+    st.subheader("Upload Activity File")
+    st.info("Upload any Excel file that contains these required columns:\n" + 
+            ", ".join(TODO_REQUIRED_COLUMNS))
+    todo_file = st.file_uploader("Choose Excel file", type=["xlsx", "xls"])
     
-    manual_todo_file = st.file_uploader("Upload To Do.xlsx", type="xlsx")
-    manual_contact_file = st.file_uploader("Upload Contact (res.partner).xlsx", type="xlsx")
+    # Override contact file section
+    st.subheader("Override Contact File (Optional)")
+    manual_contact_file = st.file_uploader("Upload Contact (res.partner).xlsx", type=["xlsx", "xls"])
     
-    # Process data based on either automatic or manual files
+    # Process data
     todo_df = None
     contact_df = None
     
-    # Prioritize manual uploads over automatic files
-    if manual_todo_file is not None:
-        todo_df = pd.read_excel(manual_todo_file)
-    elif st.session_state.todo_data is not None:
-        todo_df = st.session_state.todo_data
-        
+    # Get To Do data from manual upload and validate
+    if todo_file is not None:
+        try:
+            temp_df = pd.read_excel(todo_file)
+            is_valid, message = validate_todo_file(temp_df)
+            if is_valid:
+                todo_df = temp_df
+                st.success(f"Successfully loaded: {todo_file.name}")
+            else:
+                st.error(message)
+        except Exception as e:
+            st.error(f"Error reading file: {str(e)}")
+    
+    # Get Contact data (prioritize manual upload over automatic)
     if manual_contact_file is not None:
         contact_df = pd.read_excel(manual_contact_file)
     elif st.session_state.contact_data is not None:
         contact_df = st.session_state.contact_data
     
-    # Process data if both files are available from either source
+    # Process data if both files are available
     if todo_df is not None and contact_df is not None:
         try:
             result_df = process_data(todo_df, contact_df)
@@ -163,7 +159,10 @@ def main():
             st.error(f"An error occurred: {str(e)}")
             st.error("Please make sure your Excel files have the required columns")
     else:
-        st.info("Waiting for files (either automatic or manual upload)...")
+        if todo_file is None:
+            st.info("Please upload an Excel file with the required columns")
+        elif contact_df is None:
+            st.info("Waiting for Contact file (either automatic or manual upload)")
 
 if __name__ == "__main__":
     main()
