@@ -1,12 +1,8 @@
 import streamlit as st
 import pandas as pd
 import io
-import os
 from datetime import datetime, time
-
-# File path for automatic loading
-FILE_PATH = r"C:\Users\KendiNg\Documents\Apps_running_files"
-CONTACT_FILE = "Contact (res.partner).xlsx"
+import os
 
 # Required columns
 TODO_REQUIRED_COLUMNS = ['Activity Company / ID', 'Assign To (Handler 1)', 'Assign To (Handler 2)']
@@ -43,13 +39,18 @@ def validate_todo_file(df):
     return True, "File is valid"
 
 def load_contact_file():
-    """Load contact file and get its last modified time"""
-    contact_path = os.path.join(FILE_PATH, CONTACT_FILE)
-    if os.path.exists(contact_path):
-        last_modified = datetime.fromtimestamp(os.path.getmtime(contact_path))
-        data = pd.read_excel(contact_path)
-        return data, last_modified
-    return None, None
+    """Load contact file from the app directory"""
+    try:
+        # Try to load from the current directory
+        contact_path = "Contact (res.partner).xlsx"
+        if os.path.exists(contact_path):
+            last_modified = datetime.fromtimestamp(os.path.getmtime(contact_path))
+            data = pd.read_excel(contact_path)
+            return data, last_modified
+        return None, None
+    except Exception as e:
+        st.error(f"Error loading contact file: {str(e)}")
+        return None, None
 
 def check_automatic_contact():
     """Check and load contact file"""
@@ -92,9 +93,9 @@ def main():
     st.subheader("Contact File Status")
     if st.session_state.last_modified_contact:
         st.write(f"Contact file last modified: {st.session_state.last_modified_contact}")
-        st.write(f"Source: {os.path.join(FILE_PATH, CONTACT_FILE)}")
     else:
-        st.warning("Contact file not found in automatic directory")
+        st.warning("""Contact file not found. Please ensure 'Contact (res.partner).xlsx' is in the same directory as the app.
+                  Current working directory: """ + os.getcwd())
     
     # Manual refresh button for automatic contact file
     if st.button("Refresh Contact File"):
