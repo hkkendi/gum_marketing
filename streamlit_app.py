@@ -3,6 +3,7 @@ import pandas as pd
 import io
 from datetime import datetime, time
 import os
+from pathlib import Path
 
 # Required columns
 TODO_REQUIRED_COLUMNS = ['Activity Company / ID', 'Assign To (Handler 1)', 'Assign To (Handler 2)']
@@ -15,39 +16,39 @@ if 'last_modified_contact' not in st.session_state:
 if 'last_check_time' not in st.session_state:
     st.session_state.last_check_time = None
 
-def should_check_files():
-    """Determine if files should be checked based on current time"""
-    current_time = datetime.now().time()
-    check_times = [
-        time(10, 0),  # 10:00 AM
-        time(12, 30)  # 12:30 PM
+def find_contact_file():
+    """Find contact file in possible locations"""
+    possible_paths = [
+        "Contact (res.partner).xlsx",  # Same directory
+        "./Contact (res.partner).xlsx",  # Explicit current directory
+        "../Contact (res.partner).xlsx",  # Parent directory
+        "data/Contact (res.partner).xlsx",  # Data subdirectory
     ]
     
-    if any(current_time.hour == t.hour and current_time.minute == t.minute for t in check_times):
-        if (st.session_state.last_check_time is None or 
-            st.session_state.last_check_time.hour != current_time.hour or 
-            st.session_state.last_check_time.minute != current_time.minute):
-            st.session_state.last_check_time = current_time
-            return True
-    return False
-
-def validate_todo_file(df):
-    """Validate that the uploaded file has the required columns"""
-    missing_columns = [col for col in TODO_REQUIRED_COLUMNS if col not in df.columns]
-    if missing_columns:
-        return False, f"Missing required columns: {', '.join(missing_columns)}"
-    return True, "File is valid"
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+            
+    return None
 
 def load_contact_file():
-    """Load contact file from the app directory"""
+    """Load contact file with improved error handling"""
     try:
-        # Try to load from the current directory
-        contact_path = "Contact (res.partner).xlsx"
-        if os.path.exists(contact_path):
+        # Find the contact file
+        contact_path = find_contact_file()
+        
+        if contact_path:
+            st.write(f"Found contact file at: {contact_path}")  # Debug info
             last_modified = datetime.fromtimestamp(os.path.getmtime(contact_path))
             data = pd.read_excel(contact_path)
             return data, last_modified
+            
+        # Debug information
+        st.write("Current working directory:", os.getcwd())
+        st.write("Directory contents:", os.listdir())
+        
         return None, None
+        
     except Exception as e:
         st.error(f"Error loading contact file: {str(e)}")
         return None, None
@@ -59,6 +60,8 @@ def check_automatic_contact():
     if contact_data is not None:
         st.session_state.contact_data = contact_data
         st.session_state.last_modified_contact = contact_modified
+
+
 
 def process_data(todo_df, contact_df):
     # Keep only required columns
