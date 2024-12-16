@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
-from datetime import datetime, time
+from datetime import datetime
 import os
 
 # Required columns
@@ -12,24 +12,25 @@ if 'contact_data' not in st.session_state:
     st.session_state.contact_data = None
 if 'last_modified_contact' not in st.session_state:
     st.session_state.last_modified_contact = None
-if 'last_check_time' not in st.session_state:
-    st.session_state.last_check_time = None
 
-def should_check_files():
-    """Determine if files should be checked based on current time"""
-    current_time = datetime.now().time()
-    check_times = [
-        time(10, 0),  # 10:00 AM
-        time(12, 30)  # 12:30 PM
-    ]
-    
-    if any(current_time.hour == t.hour and current_time.minute == t.minute for t in check_times):
-        if (st.session_state.last_check_time is None or 
-            st.session_state.last_check_time.hour != current_time.hour or 
-            st.session_state.last_check_time.minute != current_time.minute):
-            st.session_state.last_check_time = current_time
-            return True
-    return False
+def load_contact_file():
+    """Load contact file from the app directory"""
+    try:
+        # Try to load from the current directory
+        contact_path = os.path.join(os.getcwd(), "Contact (res.partner).xlsx")
+        
+        # Debug information
+        st.write("Looking for contact file at:", contact_path)
+        st.write("Directory contents:", os.listdir())
+        
+        if os.path.exists(contact_path):
+            last_modified = datetime.fromtimestamp(os.path.getmtime(contact_path))
+            data = pd.read_excel(contact_path)
+            return data, last_modified, contact_path
+        return None, None, contact_path
+    except Exception as e:
+        st.error(f"Error loading contact file: {str(e)}")
+        return None, None, None
 
 def validate_todo_file(df):
     """Validate that the uploaded file has the required columns"""
@@ -37,20 +38,6 @@ def validate_todo_file(df):
     if missing_columns:
         return False, f"Missing required columns: {', '.join(missing_columns)}"
     return True, "File is valid"
-
-def load_contact_file():
-    """Load contact file from the app directory"""
-    try:
-        # Try to load from the current directory
-        contact_path = os.path.join(os.getcwd(), "Contact (res.partner).xlsx")
-        if os.path.exists(contact_path):
-            last_modified = datetime.fromtimestamp(os.path.getmtime(contact_path))
-            data = pd.read_excel(contact_path)
-            return data, last_modified
-        return None, None
-    except Exception as e:
-        st.error(f"Error loading contact file: {str(e)}")
-        return None, None
 
 def process_data(todo_df, contact_df):
     """Process and merge the data"""
@@ -76,8 +63,27 @@ def process_data(todo_df, contact_df):
 
 st.title("Excel Data Processor")
 
-# Display automatic contact file loading status
+# Load and display contact file status
 st.subheader("Contact File Status")
+contact_data, last_modified, file_path = load_contact_file()
+
+if contact_data is not None:
+    st.success("✅ Contact file loaded successfully")
+    st.info(f"Last modified: {last_modified}")
+    st.info(f"File path: {file_path}")
+    st.session_state.contact_data = contact_data
+    st.session_state.last_modified_contact = last_modified
+else:
+    st.warning("⚠️ Contact file not found in the deployment directory")
+    st.info("Current directory path: " + os.getcwd())
+
+# Manual refresh button for contact file
+if st.button("🔄 Refresh Contact File"):
+    contact_data, last_modified, file_path = load_contact_file()
+    if contact_data is not None:
+        st.session_state.contact_data = contact_data
+        st.session_state.last_modified_contact = last_modified
+        st.rerun()
 
 # Manual file upload section with expanded help text
 st.subheader("Upload Activity File")
