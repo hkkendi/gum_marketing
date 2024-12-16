@@ -1,25 +1,15 @@
-import subprocess
-subprocess.run(['pip', 'install', 'openpyxl', 'schedule'])
-
 import streamlit as st
 import pandas as pd
 import io
-import ipaddress
-import schedule
-import time
-import threading
 import os
-from datetime import datetime
-from pathlib import Path
-from streamlit.web.server.websocket_headers import _get_websocket_headers
-from streamlit.runtime.scriptrunner import get_script_run_ctx
+from datetime import datetime, time
 
 # File paths
 FILE_PATH = r"C:\Users\KendiNg\Documents\Apps_running_files"
 TODO_FILE = "To Do.xlsx"
 CONTACT_FILE = "Contact (res.partner).xlsx"
 
-# Global variables to store file data and timestamps
+# Initialize session state
 if 'todo_data' not in st.session_state:
     st.session_state.todo_data = None
 if 'contact_data' not in st.session_state:
@@ -28,6 +18,25 @@ if 'last_modified_todo' not in st.session_state:
     st.session_state.last_modified_todo = None
 if 'last_modified_contact' not in st.session_state:
     st.session_state.last_modified_contact = None
+if 'last_check_time' not in st.session_state:
+    st.session_state.last_check_time = None
+
+def should_check_files():
+    """Determine if files should be checked based on current time"""
+    current_time = datetime.now().time()
+    check_times = [
+        time(10, 0),  # 10:00 AM
+        time(12, 30)  # 12:30 PM
+    ]
+    
+    # If it's exactly one of our check times, return True
+    if any(current_time.hour == t.hour and current_time.minute == t.minute for t in check_times):
+        if (st.session_state.last_check_time is None or 
+            st.session_state.last_check_time.hour != current_time.hour or 
+            st.session_state.last_check_time.minute != current_time.minute):
+            st.session_state.last_check_time = current_time
+            return True
+    return False
 
 def load_file(file_path):
     """Load file and get its last modified time"""
@@ -37,8 +46,8 @@ def load_file(file_path):
         return data, last_modified
     return None, None
 
-def scheduled_file_check():
-    """Check and load files at scheduled times"""
+def check_automatic_files():
+    """Check and load files"""
     todo_path = os.path.join(FILE_PATH, TODO_FILE)
     contact_path = os.path.join(FILE_PATH, CONTACT_FILE)
     
@@ -54,19 +63,6 @@ def scheduled_file_check():
     if contact_data is not None:
         st.session_state.contact_data = contact_data
         st.session_state.last_modified_contact = contact_modified
-
-def setup_scheduler():
-    """Setup scheduled file checks"""
-    schedule.every().day.at("10:00").do(scheduled_file_check)
-    schedule.every().day.at("12:30").do(scheduled_file_check)
-    
-    def run_scheduler():
-        while True:
-            schedule.run_pending()
-            time.sleep(60)
-    
-    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
-    scheduler_thread.start()
 
 def process_data(todo_df, contact_df):
     # Keep only required columns
@@ -92,11 +88,10 @@ def process_data(todo_df, contact_df):
 def main():
     st.title("Excel Data Processor")
     
-    # Setup scheduler on first run
-    if 'scheduler_initialized' not in st.session_state:
-        setup_scheduler()
-        scheduled_file_check()  # Initial file check
-        st.session_state.scheduler_initialized = True
+    # Check for automatic file updates at specified times
+    if should_check_files():
+        check_automatic_files()
+        st.rerun()
     
     # Display automatic file loading status
     st.subheader("Automatic File Loading Status")
@@ -118,7 +113,7 @@ def main():
     
     # Manual refresh button for automatic loading
     if st.button("Refresh Automatic Files"):
-        scheduled_file_check()
+        check_automatic_files()
         st.rerun()
     
     # Manual file upload section
@@ -172,4 +167,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
