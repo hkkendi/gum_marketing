@@ -182,21 +182,33 @@ if gum_data is not None:
     
     if st.button("Look Up Contact Details"):
         if email:
-            # Find matching record
-            matching_record = gum_data[gum_data['Email*'] == email]
+            # Find matching records
+            matching_records = gum_data[gum_data['Email*'] == email]
             
-            if not matching_record.empty:
-                st.success("Contact Found!")
-                # Display the contact information
-                contact_info = pd.DataFrame({
-                    'Field': ['Contact Company/ID', 'Contact Company', 'Contact Company/GUM Reference ID'],
-                    'Value': [
-                        matching_record['Contact Company/ID'].iloc[0],
-                        matching_record['Contact Company'].iloc[0],
-                        matching_record['Contact Company/GUM Reference ID'].iloc[0]
-                    ]
-                })
-                st.table(contact_info)
+            if not matching_records.empty:
+                st.success(f"Found {len(matching_records)} contact(s)!")
+                
+                # Remove duplicates based on Contact Company/ID while keeping other unique combinations
+                unique_records = matching_records.drop_duplicates(subset=['Contact Company/ID'])
+                
+                # Display each unique record
+                for idx, record in unique_records.iterrows():
+                    st.markdown(f"**Result {idx + 1}:**")
+                    contact_info = pd.DataFrame({
+                        'Field': ['Contact Company/ID', 'Contact Company', 'Contact Company/GUM Reference ID'],
+                        'Value': [
+                            record['Contact Company/ID'],
+                            record['Contact Company'],
+                            record['Contact Company/GUM Reference ID']
+                        ]
+                    })
+                    st.table(contact_info)
+                    # Add a small space between multiple results
+                    st.markdown("")
+                
+                # Show total number of records found
+                if len(unique_records) > 1:
+                    st.info(f"⚠️ Note: Found {len(unique_records)} unique Contact Company/IDs for this email.")
             else:
                 st.warning("No contact found with this email address")
         else:
